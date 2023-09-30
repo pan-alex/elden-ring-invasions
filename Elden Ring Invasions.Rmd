@@ -4,6 +4,7 @@ output:
   html_document:
     theme: paper
 date: "2023-09-29"
+author: "https://github.com/pan-alex/elden-ring-invasions"
 ---
 
 ```{r setup, include=FALSE}
