@@ -1,0 +1,547 @@
+---
+title: "Elden Ring Invasions"
+output: 
+  html_document:
+    theme: paper
+date: "2023-09-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(readxl)
+```
+
+
+```{r}
+dat <- read_excel("Elden Ring Invasions.xlsx")
+location_order <- read_excel("Elden Ring Invasions.xlsx", sheet='Location Order')
+location_mapping <- read_excel("Elden Ring Invasions.xlsx", sheet='Map')
+recommended_levels <- read_excel("Elden Ring Invasions.xlsx", sheet='Recommended Levels')
+
+dat <- dat %>% 
+  mutate(level = as.factor(level),    # Level to factor
+         win = toupper(win),
+         win = ifelse(type == 'Nostart', 'O', win),    # Assign win    
+         start = ifelse(type == 'Nostart', FALSE, TRUE)) %>%
+  left_join(y=location_mapping[c('sublocation','location_type')], by='sublocation') %>%
+  filter(!is.na(level), !is.na(win))   # Remove rows if certain col values are NA
+
+cbbPalette <- c("#8F003B", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7",
+                "#045275", "#089099", "#7CCBA2", "#FCDE9C", "#F0746E", "#DC3977", "#7C1D6F")
+
+
+```
+
+
+# Overview {.tabset}
+
+This document shows stats from ~700 invasions in Elden Ring patch 1.10 across 6 different levels.
+
+Platform: PC
+
+
+```{r}
+print(paste("Total number of invasions recorded:", nrow(dat)))
+```
+
+
+## Invasion Parameters {.tabset}
+
+### Build Information
+
+All builds are strength focused (Mostly Claymore/KGS, some halberds, and other weapons to a lesser extent).
+
+Builds are "honest" for the most part. I.e., they don't use items that the host likely would not have access to yet. There are some exceptions, as my low level characters still stay strapped with a dragon halberd and boluses in case I encounter truly maidenless behaviour.
+
+
+|Rune Level  | Weapon Upgrade / Somber Upgrade | Flask Number / Upgrade |
+|:-----:|:------:|:------:|
+| RL20  | +2/+1  |  4/+4  |
+| RL40  | +5/+2  |  5/+7  |
+| RL61*  | +12/+5 |  6/+10 |
+| RL80  | +18/+6 |  7/+12 |
+| RL95  | +20/+8 |  7/+12 |
+| RL138 | +25/+10|  7/+12 |
+
+\* Why RL61? I was level 60 and wanted to put a point into dex and I was too lazy to rebirth. Since I started recording at RL61 I continued that for consistency.
+
+### Invasion Ranges
+
+This graph shows the invasion brackets for my characters versus the progression recommended in theElden Ring wiki.
+
+The grey dashed boxes represent the recommended level/weapon upgrades for different locations according to the Wiki, while the coloured solid boxes represent the level/weapon ranges that I could invade using the characters that I played on.
+
+Source: https://eldenring.wiki.fextralife.com/Recommended+Level+by+Location
+
+```{r fig.width=6, fig.height=4}
+dat_ranges <- data.frame(
+  level = factor(c("20+2", "40+5", "61+12", "80+18", "95+20", "138+25")),
+  weapon_min = c(0, 2, 8, 13, 15, 19),
+  weapon_max = c(5, 8, 17, 24, 25, 25),
+  level_min = c(18, 36, 55, 72, 86, 125),
+  level_max = c(42, 64, 87, 108, 124, 171)
+)
+
+p <- ggplot() + 
+  geom_rect(data=recommended_levels, 
+            mapping=aes(xmin=level_min, xmax=level_max, ymin=weapon_min, ymax=weapon_max), 
+            linetype='dashed', 
+            color="black", 
+            alpha=0.1)
+  # geom_point(data=recommended_levels, aes(x=level_mid, y=weapon_mid, alpha = 0), size=1.5) + 
+
+p + geom_rect(data=dat_ranges, mapping=aes(xmin=level_min, xmax=level_max, ymin=weapon_min, ymax=weapon_max, fill=level), color="black", alpha=0.5) +
+  scale_fill_manual(values = cbbPalette) +
+  geom_text(data=dat_ranges, aes(x=level_min+(level_max-level_min)/2, y=weapon_min+(weapon_max-weapon_min)/2, label=level), size=4) +
+  theme(legend.position = "none") +
+  labs(y="Weapon Level", x="Rune Level", title="Invasion Brackets For the Tested Characters\nvs. Recommended Level Progression") +
+  scale_x_continuous(limits = c(0, 171), breaks = c(0, 25, 50, 75, 100, 125, 150, 175))
+```
+
+
+### Number of Invasions at Each Level
+
+RL20, RL40, and RL95 were added later in the data collection so there are fewer invasions recorded at these levels.
+
+```{r fig.width=4, fig.height=3}
+ggplot(data=dat, aes(x=level, fill=level)) +
+  geom_bar() +
+  geom_text(aes(label=after_stat(count)), stat="count", vjust=1.2) +
+  scale_fill_manual(values=cbbPalette) +
+  theme(legend.position = 'none')
+```
+
+
+## Invasion Stats {.tabset}
+
+### Invasion Activity
+
+#### Invasion Activity
+
+In the graph below, each point represents the number of bloody/recusant finger activations needed to get an invasion. Alternating between the fingers gets you faster invasions as each activation refreshes your place in queue. 
+
+**Take Aways:** 
+
+- While all levels received near-instant invasions during active times, activity at RL 40, 80, and 95 slowed down during non-peak times. RL20, 61, and 138 remain relatively active pretty much at all times, with 75% of invasions requiring 7 or fewer fingers.
+
+```{r fig.width=4, fig.height=3}
+dat_fingers <- dat %>% filter(!is.na(fingers))
+group_sizes <- dat_fingers %>% count(level) %>% rename(group_size = n)
+dat_fingers <- dat_fingers %>% 
+  left_join(group_sizes, by='level') %>% 
+  mutate(group_size = as.character(group_size)) %>%
+  mutate(level_char = paste("RL", as.character(level), "n=", as.character(group_size)))
+```
+
+```{r}
+tapply(dat_fingers$fingers, dat_fingers$level, summary)
+```
+
+```{r fig.width=6, fig.height=4}
+# Group any values >= 24
+dat_fingers <- dat_fingers %>% mutate(fingers = ifelse(fingers >25, 25, fingers))
+
+ggplot(data=dat_fingers, aes(x=level, y=fingers, fill=level)) +
+  geom_boxplot(alpha=0.75) +
+  geom_jitter(alpha=0.1, position=position_jitter(height=0, width=0.2)) +
+  scale_fill_manual(values=cbbPalette) +
+  labs(x="Level", 
+       y="Number of Fingers\n(capped at 25)",
+       title="# of Finger Activations Needed for Invasion\nLower Value = More Active") +
+  theme_minimal() +
+  theme(legend.position = 'none')
+```
+
+Note: Recording invasion activity only began with Invasion #439.
+
+
+```{r include = FALSE}
+ggplot(data=dat_fingers, aes(x=fingers, fill=level)) +
+  geom_histogram(aes(y = after_stat(count / sum(count))), bins=12) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values=cbbPalette) +
+  ylab("Frequency") +
+  xlab("Number of Fingers (capped at 25)") + 
+  facet_wrap(vars(level_char), nrow=2) +
+  theme(legend.position = 'none')
+```
+
+
+#### Fogwall/DC Invasions
+
+This includes all invasions that failed to start for any reason. Most are connection error or fog wall before I arrive; but also includes invasions where host inaccessible or dies before I get to them.
+
+If I have engaged with the host and they retreat to a fogwall before I can kill them, it is counted as a loss.
+
+**Take Aways:** 
+
+- Close to one fifth of invasions were fogwalls / DCs (fogwall was the most common reason).
+
+- The rate of fog-walling increased with level.
+
+```{r fig.height=3, fig.width=5}
+df_long <- dat %>%
+  select(level, start) %>% 
+  pivot_longer(-level) %>%
+  group_by(level, value) %>%
+  summarise(n= n()) %>%
+  mutate(prop = round(n*100 / sum(n), digits=1))
+
+ggplot(data = df_long, aes(x=level,y=prop, fill=value)) +
+  geom_col() +
+  scale_fill_manual(values=c("#E69F00", "#56B4E9"), labels=c("Fogwall/DC", "Invasion\nOccured")) +
+  geom_text(aes(label=prop), position=position_stack(vjust=0.3)) +
+  labs(y="Probability", x = "Level", title = "Propotion of Invasions that Actually Occured\n(No fogwall/DC)")
+```
+
+
+### Invasion Locations
+
+#### General Map Location
+
+```{r fig.height=7, fig.width=8}
+dat_loc_by_level <- dat %>% select(location, sublocation, level) %>%
+  group_by(level, location) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n*100 / sum(n))
+
+colours <- location_order$hex
+names(colours) <- location_order$location
+ggplot(data = dat_loc_by_level, 
+       aes(y = factor(location, level = rev(location_order$location)),
+           x = prop,
+           fill = location
+           )
+        )+
+  geom_col() +
+  scale_fill_manual(values=colours) +
+  facet_grid(rows=vars(level)) +
+  facet_wrap(vars(level), nrow=2) +
+  labs(y="Location", x = "%", title = "Invasion Location by Rune Level") +
+  theme(legend.position = "none")
+```
+
+
+#### Open World vs. Dungeon
+
+**Take Aways:** 
+
+- RL20 is mostly open world and Stormveil.
+
+- RL60 to RL95 encounter the most mini dungeon and "hybrid" location invasions. 
+
+
+```{r}
+dat_loc_type_by_level <- dat %>% select(location, location_type, level) %>%
+    group_by(level, location_type) %>%
+    summarise(n = n()) %>%
+    mutate(prop = n*100 / sum(n))
+
+ggplot(data = dat_loc_type_by_level, 
+       aes(y = factor(location_type),
+           x = prop,
+           fill = location_type
+           )
+        )+
+  geom_col() +
+  # scale_fill_manual(values=colours) +
+  facet_grid(rows=vars(level)) +
+  facet_wrap(vars(level), nrow=2) +
+  scale_fill_manual(values=cbbPalette) +
+  labs(y="Location", x = "%", title = "Invasion Location by Rune Level") +
+  theme(legend.position = "none")
+```
+
+Definitions:
+
+*Legacy Dungeons* includes both large legacy dungeons (e.g., Stormveil, Raya Lucaria, Leyndell), and smaller legacy dungeons (e.g., Redmane Castle, Shaded Castle, Caria Manor)
+
+*Hybrid* areas are areas that are mostly open-world but have dungeon elements (e.g., some combination of verticality, smaller area, higher mob density, defined objectives, or no Torrent). Full list: Ainsel River, Lake of Rot, Nokstella, Sellia, Deeproot Depths, Ruin-Strewn Precipice, Moghwyn Palace, Nokron, Siofra Aquaduct, Siofra River.
+
+*Other* includes Radahn Beach, Audience Pathway, Stone Platform, Queen's Bedchamber, Ashen Leyndell. I.e., small areas (generally right before boss fights) that are cut off from the main part of the map.
+
+```{r, include=FALSE}
+print.data.frame(dat_loc_type_by_level)
+```
+
+
+
+### Invasion/Host Type
+
+#### Invasion Type
+
+**Take Aways:** 
+
+- RL138 had the highest % of ganks and bonfire duelists, representing ~45% of invasions.
+
+- Outside of meta level, most invasions are organic. RL61 had the highest % of organic invasions. ~70% of invasions were either organic invasions or non-bonfire duels.
+
+```{r fig.height=5, fig.width=6}
+dat_invasion_type_by_level <- dat %>% 
+    filter(type != 'Nostart') %>%
+    select(type, level) %>%
+    group_by(level, type) %>%
+    summarise(n = n()) %>%
+    mutate(prop = n*100 / sum(n),
+           type = ifelse(type == 'Reg', 'Organic', type)
+    )
+
+ggplot(data = dat_invasion_type_by_level, 
+       aes(y = factor(type),
+           x = prop,
+           fill = type
+           )
+        )+
+  geom_col() +
+  facet_grid(rows=vars(level)) +
+  facet_wrap(vars(level), nrow=2) +
+  scale_fill_manual(values=cbbPalette) +
+  labs(y="Invasion Type", x = "%", title = "Invasion Type by Rune Level") +
+  theme(legend.position = "none")
+```
+
+```{r include=FALSE}
+print.data.frame(dat_invasion_type_by_level)
+```
+
+
+Definitions:
+
+*Organic:* Host is progressing through the level in earnest before I arrived. Doesn't necessarily mean they were fighting PvE when I arrived, as sometimes they will wait for the invader to show.
+
+*Duel:* Host is progressing through the level in earnest before I arrived. Host/team took turns 1v1ing me (with or without healing) rather than piling on me.
+
+*Gankish:* Unlikely (in my assessment) that the team is intentionally waiting for invaders to gank, but due to a combination of spawn location/map design, host/team behaviour and builds, it feels like a gank. E.g., spawning 3v1 into Radahn's beach often feels like a gank even if the host just wants to fight Radahn.
+
+*Gank:* In my assessment, the host/team are intentionally waiting for invaders to draw into an outnumbered fight.
+
+*Bonfire:* Host is intentionally waiting for an invader to duel.
+
+*2v2:* I have a co-invader and fight host/teammate. I only count something as a 2v2 if the host is waiting for 2 invaders before fighting or if we invade around the same time and engage together. If the host is ganking one invader on-sight and a co-invader happens to spawn in I count it as a gank.
+
+*Trade:* Phantom dropping items for host.
+
+
+
+#### Host Type
+
+**Take Aways:**
+
+- Meta level players (RL138) are generally better (more veterans and fewer noobs).
+
+- Maidenless behaviour is seen most frequently at meta level and to a lesser extent at RL20.
+
+- Mid-range levels do not frequently encounter outright maidenless behaviour as often. RL95+20, which invades up to RL124+25 is very effective at cutting out maidenless behaviour compared to meta level.
+
+```{r fig.height=4, fig.width=6}
+dat_host_type_by_level <- dat %>% 
+    filter(!is.na(host_type)) %>%
+    select(host_type, level) %>%
+    group_by(level, host_type) %>%
+    summarise(n = n()) %>%
+      mutate(prop = n*100 / sum(n),
+             host_type = factor(host_type, levels=c('Maidenless', 'Veteran', 'Intermediate','Noob')))
+
+
+ggplot(data = dat_host_type_by_level, 
+       aes(y = factor(host_type),
+           x = prop,
+           fill = host_type)
+        )+
+  geom_col() +
+  facet_grid(rows=vars(level)) +
+  facet_wrap(vars(level), nrow=2) +
+  scale_fill_manual(values=cbbPalette) +
+  labs(y="Host Type", x = "%", title = "Host Type by Rune Level") +
+  theme(legend.position = "none")
+```
+
+
+Definitions:
+
+*Maidenless:* Would classify them as a veteran, but they demonstrated maidenless behaviour. My definition may be stricter than others but includes: hacks/exploits; chugging/buff-stacking rune-arc'd bonfire duelist; unnecessarily using OP consumables like sleep arrows, starlight shards (e.g., vs. normal builds and while having numbers advantage); trying to lure invaders into a gank; status-build up build at low levels or with some extra gimmick (e.g., BHS).
+
+*Veteran:* Can tell by their build and/or playstyle that they understand the game. Not necessarily an exceptional player but has probably beat the game more than once; doesn't fail on basic mechanics or repeat blunders.
+
+*Intermediate:* Not a noob but probably doesn't have full game knowledge (e.g., decent player on their 1st playthrough or someone with more hours but not as PvP focused).
+
+*Noob:* Player does something that signals to me they are new to the game or PvP: very low vigor (2-3 hits), fatrolling, easily guard-broken, doesn't dodge or very bad timing, doesn't adapt at all throughout fights.
+
+
+
+
+### Other Stats {.tabset}
+
+
+#### Invasions with Co-invader
+
+```{r fig.height=3, fig.width=5}
+dat_coinvader_by_level <- dat %>% 
+    filter(win != 'O') %>%
+    select(co, level) %>%
+    group_by(level, co) %>%
+    summarise(n = n()) %>%
+      mutate(prop = round(n*100 / sum(n), digits=1),
+             co = factor(co, levels = c(0, 1, 2)))
+
+
+ggplot(data = dat_coinvader_by_level, 
+       aes(x = level,
+           y = prop,
+           fill = co)
+        )+
+  geom_col() +
+  labs(y="%", x = "%", title = "Percentage of Invasions with a Co-invader") +
+  scale_fill_manual(values=c( "#AAAAAA", "#E69F00", "#56B4E9"), name='# of\nCo-invaders') +
+  geom_text(aes(label=prop), position=position_stack(vjust=0.5))
+```
+
+
+#### Invasions with Rune Arc'd Host
+
+```{r, fig.height=3, fig.width=5}
+df_long <- dat %>%
+  filter (win != 'O') %>%
+  mutate(rune_arc = grepl('rune arc', note, ignore.case=TRUE)) %>%
+  select(level, rune_arc) %>% 
+  pivot_longer(-level) %>%
+  group_by(level, value) %>%
+  summarise(n= n()) %>%
+  mutate(prop = round(n*100 / sum(n), digits=1))
+
+
+
+ggplot(data = df_long, aes(x=level,y=prop, fill=value)) +
+  geom_col() +
+  scale_fill_manual(values=c("#E69F00", "#56B4E9"), labels=c("No Arc", "Rune Arc")) +
+  geom_text(aes(label=prop), position=position_stack(vjust=0.2)) +
+  labs(y="Probability", x = "Level", title = "% of Hosts with Rune Arc")
+```
+
+
+
+
+
+#### Invasions where Host/Team Emoted Back
+
+```{r}
+dat_emote <- dat %>%
+  filter (!is.na(emote_1)) %>%
+  select(emote_1) %>% 
+  group_by(emote_1) %>%
+  summarise(n= n()) %>%
+  mutate(prop = round(n*100 / sum(n), digits=1))
+
+print(paste("Proportion of Invasions that I start with an emote (before attacking): ", dat_emote$prop[2], "%", sep=''))
+```
+
+```{r}
+dat_emote <- dat %>%
+  filter (!is.na(emote_1), !is.na(emote_2)) %>%
+  select(emote_2) %>% 
+  group_by(emote_2) %>%
+  summarise(n= n()) %>%
+  mutate(prop = round(n*100 / sum(n), digits=1))
+
+print(paste("Proportion of Invasions where they emote back (before attacking): ", dat_emote$prop[2], "%", sep=''))
+```
+
+#### Most common emotes after killing me
+
+```{r, fig.height=3, fig.width=5}
+df_long <- dat %>%
+  filter (win == 'L') %>%
+  select(emote_end) %>%
+  mutate(emote_end = str_to_title(emote_end))
+
+emotes <- df_long$emote_end %>% 
+  sapply(strsplit, ";") %>%
+  unlist(use.names = FALSE) %>% 
+  sapply(str_trim)
+
+my_tab <- table(emotes)
+my_tab %>% as.data.frame() %>%
+  arrange(desc(Freq)) %>%
+  filter(Freq > 2)
+
+```
+
+
+#### Invasions with an OLP
+
+An overleveled-phantom (OLP) is one that was summoned via password because they would be too high level for the host to summon organically.
+
+Determining OLPs is tricky because the only way to determine whether a phantom  is overleveled certainty is to kill them. These determinations are based on feeling (damage numbers, HP spells, items, amount of FP), and where possible, runes acquired on kill. At meta level, anything goes so I did not record OLPs.
+
+"Uncertain" is most likely because the invasion was too short to tell, or because the phantom had super high damage but it was still plausible that they were just running a glass cannon build.
+
+```{r fig.height=4, fig.width=5}
+dat_olp_by_level <- dat %>% 
+    filter(win != 'O', level != 138) %>%
+    select(olp, level) %>%
+    group_by(level, olp) %>%
+    summarise(n = n()) %>%
+      mutate(prop = round(n*100 / sum(n), digits=1),
+             olp = ifelse(is.na(olp), "uncertain", olp)) %>%
+      mutate(olp = factor(olp, levels = c("uncertain", "0", "1", "2")))
+
+
+ggplot(data = dat_olp_by_level, 
+       aes(x = level,
+           y = prop,
+           fill = olp)
+        )+
+  geom_col() +
+  labs(y="%", x = "%", title = "Percentage of Invasions\nwith an Overleveled Phantom") +
+  scale_fill_manual(values=c("#CC79A7", "#AAAAAA", "#E69F00", "#56B4E9"), name='# of\nOLPs') +
+  geom_text(aes(label=prop), position=position_stack(vjust=0.5))
+```
+
+
+
+#### Invasion Win rate
+
+**Note:** Invasions were not evenly distributed over time across levels. Most early invasions were done at RL61, RL80, and RL138. Aside from RL138 simply being a more difficult bracket, the increased win rates for RL20, RL40, and RL95 vs. RL61/80 may simply reflect changes in my own game play.
+
+```{r fig.height=4, fig.width=5}
+df_long <- dat %>%
+  filter (win != 'O') %>%
+  select(level, win) %>% 
+  pivot_longer(-level) %>%
+  group_by(level, value) %>%
+  summarise(n= n()) %>%
+  mutate(prop = round(n*100 / sum(n), digits=1))
+
+ggplot(data = df_long, aes(x=level,y=prop, fill=value)) +
+  geom_col() +
+  scale_fill_manual(values=c("#E69F00", "#56B4E9"), labels=c("Loss", "Win")) +
+  geom_text(aes(label=prop), position=position_stack(vjust=0.2)) +
+  labs(y="Probability", x = "Level", title = "Win Rate by Level")
+```
+
+
+#### Invasions where I used a gankspank L2
+
+I try to avoid 1-shot stick L2s, but I will use them on occasion to deal with overleveled phantoms or maidenless teams. The L2s that I used include: Stormhawk Axe, Dragon Halberd, and Greatbow (Rain of Arrows).
+
+There's no real to share this information other than for trivia.
+
+```{r fig.height=3, fig.width=5}
+df_long <- dat %>%
+  filter (win != 'O') %>%
+  mutate(l2 = grepl('L2', note, ignore.case=TRUE)) %>%
+  select(level, l2) %>% 
+  pivot_longer(-level) %>%
+  group_by(level, value) %>%
+  summarise(n= n()) %>%
+  mutate(prop = round(n*100 / sum(n), digits=1))
+
+
+
+ggplot(data = df_long, aes(x=level,y=prop, fill=value)) +
+  geom_col() +
+  scale_fill_manual(values=c("#E69F00", "#56B4E9"), labels=c("No L2", "Used L2")) +
+  geom_text(aes(label=prop), position=position_stack(vjust=0.2)) +
+  labs(y="Probability", x = "Level", title = "% of Invasions where I used a gankspank L2")
+```
