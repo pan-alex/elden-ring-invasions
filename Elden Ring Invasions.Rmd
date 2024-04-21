@@ -522,6 +522,25 @@ ggplot(data = df_long, aes(x=level,y=prop, fill=value)) +
 ```
 
 
+#### Win rate by presence of OLP
+
+
+```{r fig.height=4, fig.width=5}
+df_long <- dat %>%
+  filter (win != 'O', olp >= 1) %>%
+  select(level, olp, win) %>% 
+  group_by(level, win) %>%
+  summarise(n= n()) %>%
+  mutate(prop = round(n*100 / sum(n), digits=1))
+
+ggplot(data = df_long, aes(x=level,y=prop, fill=win)) +
+  geom_col() +
+  scale_fill_manual(values=c("#E69F00", "#56B4E9"), labels=c("Loss", "Win")) +
+  geom_text(aes(label=prop), position=position_stack(vjust=0.2)) +
+  labs(y="Probability", x = "Level", title = "Win Rate by Level")
+```
+
+
 #### Invasions where I used a gankspank L2
 
 I try to avoid 1-shot stick L2s, but I will use them on occasion to deal with overleveled phantoms or maidenless teams. The L2s that I used include: Stormhawk Axe, Dragon Halberd, and Greatbow (Rain of Arrows).
